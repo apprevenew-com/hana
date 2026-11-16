@@ -47,6 +47,11 @@ class TestHana < Hana::TestCase
     assert_equal ['f^', 'oo', 'b^^ar'], pointer.to_a
   end
 
+  def test_bad_escape
+    assert_raises(Hana::Pointer::FormatError) { Hana::Pointer.new '/a/x~2' }
+    assert_raises(Hana::Pointer::FormatError) { Hana::Pointer.new '/a~' }
+  end
+
   def test_split_with_empty_segments
     pointer = Hana::Pointer.new '//'
     assert_equal ['', ''], pointer.to_a
