@@ -48,5 +48,7 @@
         {"op": "copy", "from": "/foo", "path": "/bak"},
         {"op": "replace", "path": "/foo/bar/baz/0/boo", "value": "qux"}
       ],
-      "expected": {"foo": {"bar": {"baz": [{"boo": "qux"}]}}, "bak": {"bar": {"baz": [{"boo":"net"}]}}}}
+      "expected": {"foo": {"bar": {"baz": [{"boo": "qux"}]}}, "bak": {"bar": {"baz": [{"boo":"net"}]}}}},
+
+    {"comment": "test caret in a key is a plain character", "doc": {"a^^b": 1, "a^b": 2}, "patch": [{"op": "replace", "path": "/a^^b", "value": 3}], "expected": {"a^^b": 3, "a^b": 2}}
 ]
