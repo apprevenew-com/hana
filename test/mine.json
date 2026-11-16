@@ -62,5 +62,11 @@
 
     {"comment": "test copy from an index with a leading zero should fail", "doc": {"foo": [1, 2, 3]}, "patch": [{"op": "copy", "from": "/foo/01", "path": "/bar"}], "error": "copy op should reject the array value, it has leading zeros"},
 
-    {"comment": "test copy from an index past the end should fail", "doc": {"foo": [1]}, "patch": [{"op": "copy", "from": "/foo/1", "path": "/bar"}], "error": "Out of bounds"}
+    {"comment": "test copy from an index past the end should fail", "doc": {"foo": [1]}, "patch": [{"op": "copy", "from": "/foo/1", "path": "/bar"}], "error": "Out of bounds"},
+
+    {"comment": "test against a missing location with null should fail", "doc": {"foo": 1}, "patch": [{"op": "test", "path": "/bar", "value": null}], "error": "test op should fail on a missing location"},
+
+    {"comment": "test against a null member passes", "doc": {"foo": null}, "patch": [{"op": "test", "path": "/foo", "value": null}]},
+
+    {"comment": "test against an index past the end should fail", "doc": {"foo": [1]}, "patch": [{"op": "test", "path": "/foo/1", "value": null}], "error": "test op should fail on a missing location"}
 ]
