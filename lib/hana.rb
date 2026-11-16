@@ -22,17 +22,36 @@ module Hana
       Pointer.eval @path, object
     end
 
-    ESC = {'^/' => '/', '^^' => '^', '~0' => '~', '~1' => '/'} # :nodoc:
+    ESC = {'~0' => '~', '~1' => '/'} # :nodoc:
+
+    # RFC 6901 section 4: an array index is 0 or digits without a leading zero
+    INDEX = /\A(?:0|[1-9]\d*)\z/ # :nodoc:
 
     def self.eval list, object
       list.inject(object) { |o, part|
         return nil unless o
 
         if Array === o
-          raise Patch::IndexError unless part =~ /\A(?:\d|[1-9]\d+)\Z/
+          raise Patch::IndexError unless part =~ INDEX
           part = part.to_i
         end
         o[part]
+      }
+    end
+
+    # Like eval, but a location that does not exist answers the block's value
+    # instead of nil, so a null member and a missing one differ.
+    def self.fetch list, object
+      list.inject(object) { |o, part|
+        if Array === o
+          raise Patch::IndexError unless part =~ INDEX
+          return yield unless part.to_i < o.length
+          o[part.to_i]
+        elsif Hash === o && o.key?(part)
+          o[part]
+        else
+          return yield
+        end
       }
     end
 
@@ -44,12 +63,10 @@ module Hana
         raise FormatError, "JSON Pointer should start with a slash"
       end
 
-      parts = path.sub(/^\//, '').split(/(?<!\^)\//).each { |part|
-        part.gsub!(/\^[\/^]|~[01]/) { |m| ESC[m] }
+      path.sub(/^\//, '').split('/', -1).each { |part|
+        raise FormatError, "a '~' must be followed by 0 or 1 in a JSON Pointer" if part =~ /~(?![01])/
+        part.gsub!(/~[01]/) { |m| ESC[m] }
       }
-
-      parts.push("") if path[-1] == '/'
-      parts
     end
   end
 
@@ -158,8 +175,9 @@ module Hana
       dest     = Pointer.eval to, doc
 
       if Array === src
-        raise Patch::ObjectOperationOnArrayException, "cannot apply non-numeric key '#{key}' to array" unless from_key =~ /\A\d+\Z/
-        obj = src.fetch from_key.to_i
+        index = array_index from_key
+        raise Patch::OutOfBoundsException, "key '#{from_key}' is out of bounds for array" unless index.between?(0, src.length - 1)
+        obj = src[index]
       else
         begin
           obj = src.fetch from_key
@@ -170,13 +188,15 @@ module Hana
 
       raise(MissingTargetException, "target location '#{ins['path']}' does not exist") unless dest
 
-      add_op dest, key, obj
+      add_op dest, key, deep_copy(obj)
       doc
     end
 
     def test ins, doc
       path = get_path ins
-      expected = Pointer.new(path).eval doc
+      expected = Pointer.fetch(Pointer.parse(path), doc) {
+        raise MissingTargetException, "target location '#{path}' does not exist"
+      }
 
       unless expected == ins.fetch(VALUE)
         raise FailedTestException.new(ins['path'], ins[VALUE])
@@ -218,11 +238,18 @@ module Hana
       ins['path']
     end
 
+    # RFC 6901 section 4; a negative number is left to the bounds checks
+    def array_index key
+      raise ObjectOperationOnArrayException, "cannot apply non-numeric key '#{key}' to array" unless key =~ /\A-?\d+\z/
+      raise Patch::IndexError, "array index '#{key}' has a leading zero" if key =~ /\A-?0\d/
+
+      key.to_i
+    end
+
     def check_index obj, key
       return -1 if key == '-'
 
-      raise ObjectOperationOnArrayException, "cannot apply non-numeric key '#{key}' to array" unless key =~ /\A-?\d+\Z/
-      idx = key.to_i
+      idx = array_index key
       raise OutOfBoundsException, "key '#{key}' is out of bounds for array" if idx > obj.length || idx < 0
       idx
     end
@@ -238,9 +265,8 @@ module Hana
 
     def rm_op obj, key
       if Array === obj
-        raise Patch::ObjectOperationOnArrayException, "cannot apply non-numeric key '#{key}' to array" unless key =~ /\A\d+\Z/
-        key = key.to_i
-        raise Patch::OutOfBoundsException, "key '#{key}' is out of bounds for array" if key >= obj.length
+        key = array_index key
+        raise Patch::OutOfBoundsException, "key '#{key}' is out of bounds for array" if key >= obj.length || key < 0
         obj.delete_at key
       else
         begin
@@ -250,6 +276,10 @@ module Hana
           raise Patch::InvalidObjectOperationException, "cannot remove key '#{key}' from non-object"
         end
       end
+    end
+
+    def deep_copy(o)
+      Marshal.load(Marshal.dump(o))
     end
   end
 end
